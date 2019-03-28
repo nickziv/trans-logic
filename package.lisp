@@ -53,6 +53,18 @@
    )
   )
 
+(defpackage :trans-logic.io
+  (:use :cl)
+  (:import-from :trans-logic.string
+                #:str-cat)
+  (:export
+   #:puts
+   #:e-puts
+   #:fmt-out
+   #:err-out
+   )
+  )
+
 (defpackage :trans-logic.data-algebra
   (:use :cl)
   (:import-from :trans-logic.control
@@ -63,6 +75,7 @@
                 #:string-to-symbol
                 #:str-matches
                 )
+  (:import-from :trans-logic.io #:puts #:e-puts)
   (:export
    #:valid-operators
    #:symbolic-sets

@@ -15,7 +15,6 @@
 
 (in-package :trans-logic.data-algebra)
 
-
 (defvar valid-operators '(assert))
 
 ;;; Commonly used sets.
@@ -103,10 +102,10 @@
   (remove-duplicates ls :test #'equal)
   )
 
-(defun mk-set (&rest things)
+(defun mk-set (&key elems trusted)
   ;;; We cannot create empty sets.
-  (assert (and things))
-  (make-instance 'generic-set :members (dedup-list things))
+  (assert (and elems))
+  (make-instance 'generic-set :members (if (not trusted) (dedup-list elems) elems))
   )
 
 (defun mk-empty-set ()
@@ -116,7 +115,7 @@
 
 (def-notation @s (&rest things)
   (if things
-      `(mk-set ,@things)
+      `(mk-set :elems (list ,@things))
       `'empty
       )
   )
@@ -213,6 +212,9 @@
 ;;; ask if a concrete set is part of an abstract set. I _think_ we can support
 ;;; subset operations on 2 abstract sets, if the truth tables are identical.
 (def-primitive @set<= ((a generic-set) (b generic-set))
+  (if (or (empty-set? a) (empty-set? b))
+      (return-from @set<= 'empty)
+      )
   (if (and (members a))
       (do-group (e (members a))
         (if (not (has-elem? b e))
@@ -232,7 +234,6 @@
   )
 
 
-;;; XXX This is wrong. Should return 'a', if true, but will return 'b'...
 (def-operator @set>= ((a generic-set) (b generic-set))
   (if (not (empty-set? (@set<= b a)))
       a
@@ -279,8 +280,42 @@
   (length (members s))
   )
 
+(defun get-bits (integer start end)
+  (assert (<= start end))
+  (let ((size (+ (- end start) 1)))
+    (ldb (byte size start) integer)
+    )
+  )
+
+(defmacro get-bit (integer bit)
+  `(get-bits ,integer ,bit ,bit)
+  )
+
 (def-operator @powerset ((a generic-set))
-  (assert nil)
+  (let ((size (@size a))
+        (res '())
+        (current-set nil)
+        )
+    (dotimes (i (expt 2 size))
+      (setf current-set (make-instance (type-of a)))
+      (cond
+        ((equal i 0)
+         (push (@s) res)
+         )
+        ((and t)
+         (dotimes (j (integer-length i))
+           (if (= (get-bit i j) 1)
+               (progn
+                 (push (nth j (members a)) (members current-set))
+                 )
+               )
+           )
+         (push current-set res)
+         )
+        )
+      )
+    (mk-set :elems res :trusted t)
+    )
   )
 
 (def-operator @cartesian-product ((a generic-set) (b generic-set))
@@ -311,8 +346,8 @@
   (make-instance 'pure-couplet
                  :yin yin :yang yang
                  :members
-                 (list (mk-set yin)
-                       (mk-set yin yang)))
+                 (list (mk-set :elems (list yin))
+                       (mk-set :elems (list yin yang))))
   )
 
 ;;;
@@ -375,26 +410,24 @@
 
 ;;; Set equality is like primitive equality, except that instead of return the
 ;;; lisp boolean symbols we return a set. Emptiness implies falsehood, while
-;;; anything else impies truth. If sets A and B are equal, we return A, unless A
-;;; is also empty. In which case we return the univeral set. In principle,
-;;; generic-sets are empty only during testing (we don't let the user create
-;;; empty generic-sets, only symbolic sets).
+;;; anything else impies truth. If sets A and B are equal, we return A. If
+;;; either set is empty, or if they are not equal, we return the empty set.
 (def-primitive @set= ((a generic-set) (b generic-set))
+  (if (or (empty-set? a) (empty-set? b))
+      'empty
+      )
   (if (equal? a b)
-      (if (empty-set? a)
-          'universal
-          a
-          )
+      a
       'empty
       )
   )
 
 (def-primitive @set= ((a symbol) (b symbol))
+  (if (or (empty-set? a) (empty-set? b))
+      'empty
+      )
   (if (equal? a b)
-      (if (empty-set? a)
-          'universal
-          a
-          )
+      a
       )
   )
 
@@ -610,6 +643,14 @@
 
 (def-symb-binary-op symb=
   (string= s1 s2)
+  )
+
+(def-primitive equal? ((a string) (b generic-set))
+  nil
+  )
+
+(def-primitive equal? ((a symbol) (b generic-set))
+  nil
   )
 
 (def-primitive equal? ((a string) b)
@@ -857,7 +898,7 @@
   t
   )
 
-(def-primitive @cross-set-or ((c1 clan) (c2 clan))
+(def-primitive @set-or-bin ((c1 clan) (c2 clan))
   (let ((ret '())
         )
     (do-group (r1 (members c1))
@@ -869,7 +910,21 @@
     )
   )
 
-(def-primitive @cross-set-and ((c1 clan) (c2 clan))
+(def-primitive @set-or ((a clan) b &rest clans)
+  (let ((ret (@set-or-bin a b))
+        )
+    (do-group (c clans)
+      (setf ret (@set-or-bin ret c))
+      )
+    ret
+    )
+  )
+
+(def-operator @cross-set-or ((c1 clan) (c2 clan))
+  (@set-or c1 c2)
+  )
+
+(def-primitive @set-and-bin ((c1 clan) (c2 clan))
   (let ((ret '())
         )
     (do-group (r1 (members c1))
@@ -879,6 +934,20 @@
       )
     (dedup-list ret)
     )
+  )
+
+(def-primitive @set-and ((a clan) b &rest clans)
+  (let ((ret (@set-and-bin a b))
+        )
+    (do-group (c clans)
+      (setf ret (@set-and-bin ret c))
+      )
+    ret
+    )
+  )
+
+(def-operator @cross-set-and ((c1 clan) (c2 clan))
+  (@set-and c1 c2)
   )
 
 (def-primitive @superstriction ((r1 relation) (r2 relation))
@@ -957,7 +1026,8 @@
   )
 
 (defun everything< (a b)
-  ;;; Compares everything.
+  ;;; Compares everything (in the universe of the data algebra, which includes
+  ;;; sets, couplets, numbers, symbols, and combinations of those things).
   (cond
     ((and (couplet? a) (generic-set? b))
      t

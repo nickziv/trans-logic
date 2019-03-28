@@ -12,9 +12,10 @@
                :iterate
                )
   :components ((:file "package")
-               (:file "data-algebra" :depends-on ("package" "control" "string"))
+               (:file "data-algebra" :depends-on ("package" "control" "string" "io"))
                (:file "string" :depends-on ("package" "control"))
                (:file "control" :depends-on ("package"))
+               (:file "io" :depends-on ("package" "string"))
                )
   )
 
